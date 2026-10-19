@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Reindirizzamento in corso…</title>
+<style>
+  :root{
+    --bg:#0f1115; --card:#171a21; --fg:#e8eaee; --muted:#9aa3b2;
+    --accent:#4f8cff; --ring:#2a2f3a;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f5f6f8; --card:#ffffff; --fg:#14171c; --muted:#5b6472; --ring:#e3e6ec; }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0; background:var(--bg); color:var(--fg);
+    font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:grid; place-items:center; padding:24px;
+  }
+  .card{
+    width:100%; max-width:460px; background:var(--card);
+    border:1px solid var(--ring); border-radius:16px;
+    padding:32px 28px; text-align:center;
+    box-shadow:0 10px 30px rgba(0,0,0,.18);
+  }
+  .spinner{
+    width:44px; height:44px; margin:0 auto 20px;
+    border:3px solid var(--ring); border-top-color:var(--accent);
+    border-radius:50%; animation:spin .9s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  h1{font-size:19px; margin:0 0 8px; font-weight:600; letter-spacing:-.01em}
+  p{margin:0; color:var(--muted); font-size:14px}
+  .bar{height:4px; background:var(--ring); border-radius:999px; margin-top:24px; overflow:hidden}
+  .bar > i{display:block; height:100%; width:0; background:var(--accent); animation:fill var(--delay,1800ms) ease-out forwards}
+  @keyframes fill{to{width:100%}}
+  a{color:var(--accent)}
+  .fallback{margin-top:18px; font-size:13px; display:none}
+</style>
+</head>
+<body>
+  <main class="card">
+    <div class="spinner" role="status" aria-live="polite"></div>
+    <h1>Ti stiamo reindirizzando al Google Form con meno risposte</h1>
+    <p>Attendi un istante, non chiudere questa pagina.</p>
+    <div class="bar"><i></i></div>
+    <p class="fallback" id="fb">Se non vieni reindirizzato, <a id="manual" href="#">clicca qui</a>.</p>
+  </main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ─── CONFIGURAZIONE ──────────────────────────────────────────────────────
+  // Sostituisci con i link pubblici dei tuoi 4 form (.../viewform).
+  var FORMS = [
+    "https://docs.google.com/forms/d/e/1FAIpQLSdoPsQzJDhDbiYRC2xyK9KC8JTszopaIMAZ8b_OQ1lashdsWA/viewform",
+    "https://docs.google.com/forms/d/e/1FAIpQLSdwnfgBckUkb_jYQ-tXqYwKrP8fUl5tYmi35tC0QE9FfJqtcQ/viewform",
+    "https://docs.google.com/forms/d/e/1FAIpQLSe0ysCz9NkaYtWaRRRCxHRYVfiRJVJCHvNjdIvg5KziEV0n1g/viewform",
+    "https://docs.google.com/forms/d/e/1FAIpQLSdT9dY_g1k_IXiT5pf3JRzfw3B5xWvU0XIFT-EsGbSIBTZUSg/viewform"
+  ];
+
+  // Opzionale: URL del web app Apps Script che restituisce {"url": "..."}
+  // del form con MENO risposte reali. Lascia "" per usare la rotazione locale.
+  var BALANCER_ENDPOINT = "";
+
+  var DELAY_MS = 1800;   // tempo di permanenza sulla schermata
+  var TIMEOUT_MS = 1500; // timeout sul balancer prima del fallback
+  // ─────────────────────────────────────────────────────────────────────────
+
+  document.querySelector(".bar > i").style.setProperty("--delay", DELAY_MS + "ms");
+  document.querySelector(".card").style.setProperty("--delay", DELAY_MS + "ms");
+
+  var KEY = "gf_rr_idx";
+
+  // Rotazione round-robin per dispositivo, con offset iniziale casuale:
+  // distribuzione uniforme sull'insieme degli utenti, ciclica sul singolo.
+  function nextLocal() {
+    var i;
+    try {
+      var raw = localStorage.getItem(KEY);
+      i = raw === null ? Math.floor(Math.random() * FORMS.length) : (parseInt(raw, 10) + 1);
+      if (!isFinite(i)) i = 0;
+      i = ((i % FORMS.length) + FORMS.length) % FORMS.length;
+      localStorage.setItem(KEY, String(i));
+    } catch (e) {
+      i = Math.floor(Math.random() * FORMS.length); // modalità privata / storage bloccato
+    }
+    return FORMS[i];
+  }
+
+  function fromBalancer() {
+    if (!BALANCER_ENDPOINT) return Promise.reject();
+    var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
+    var t = setTimeout(function () { ctrl && ctrl.abort(); }, TIMEOUT_MS);
+    return fetch(BALANCER_ENDPOINT, { signal: ctrl && ctrl.signal, cache: "no-store" })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        clearTimeout(t);
+        if (!d || !d.url) throw new Error("payload non valido");
+        return d.url;
+      });
+  }
+
+  var started = Date.now();
+
+  function go(url) {
+    document.getElementById("manual").href = url;
+    var wait = Math.max(0, DELAY_MS - (Date.now() - started));
+    setTimeout(function () {
+      // replace(): niente voce nella history, il tasto "indietro" non riattiva il redirect
+      window.location.replace(url);
+      setTimeout(function () { document.getElementById("fb").style.display = "block"; }, 1200);
+    }, wait);
+  }
+
+  fromBalancer().then(go, function () { go(nextLocal()); });
+})();
+</script>
+</body>
+</html>
